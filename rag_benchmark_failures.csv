@@ -1,0 +1,2 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+POST,/rag/ask,HTTPError('500 Server Error: Internal Server Error for url: /rag/ask'),40,2026-07-25T09:57:59Z,2026-07-25T10:02:17Z

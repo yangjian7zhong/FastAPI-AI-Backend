@@ -1,0 +1,26 @@
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 虚拟环境
+venv/
+env/
+.venv/
+
+# IDE 配置
+.vscode/
+.idea/
+
+# 数据库文件（如果不想提交 SQLite）
+*.db
+*.sqlite
+
+# 向量库数据
+chroma_db/
+chroma_db_local/
