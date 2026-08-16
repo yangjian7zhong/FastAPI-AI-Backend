@@ -12,8 +12,8 @@ class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{os.path.join(BASE_DIR, 'test.db')}")
 
     # 连接池配置（PostgreSQL 生效）
-    DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "5"))
-    DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "5"))
+    DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "10"))
+    DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
     DB_POOL_PRE_PING: bool = os.getenv("DB_POOL_PRE_PING", "true").lower() == "true"
     DB_POOL_RECYCLE: int = int(os.getenv("DB_POOL_RECYCLE", "3600"))
 

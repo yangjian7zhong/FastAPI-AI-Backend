@@ -16,6 +16,7 @@ import sys
 import time
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -131,9 +132,13 @@ async def global_exception_handler(request: Request, exc: Exception):
 # =====================================
 
 
-# ---------- 启动事件：自动建表 + 演示账号 + Chroma 自动迁移 ----------
+# ---------- 启动事件：线程池 + 自动建表 + 演示账号 + Chroma 自动迁移 ----------
 @app.on_event("startup")
 async def startup():
+    # 调大 asyncio.to_thread 默认线程池（密码哈希等同步阻塞操作在高并发下排队），16 线程
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(ThreadPoolExecutor(max_workers=16))
+
     # SQLAlchemy 幂等建表（含 login_logs 审计表；已存在的表不动）
     await init_db()
 
