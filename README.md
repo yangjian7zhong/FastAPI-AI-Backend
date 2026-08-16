@@ -15,6 +15,43 @@
 
 FastAPI · SQLAlchemy 2.0（async）· PostgreSQL / SQLite · ChromaDB · Redis（Upstash）· DeepSeek · Docker / Railway
 
+## 架构
+
+```mermaid
+flowchart TB
+    U[用户 / 浏览器]
+    ST[展示层：Streamlit<br/>streamlit_app.py（本地演示）]
+    API[接口层：FastAPI<br/>认证 · 参数校验 · 路由 · SSE 流式]
+    AUTH[认证服务<br/>JWT 双 Token · 令牌校验]
+    CHAT[聊天服务<br/>SSE 流式 · 25s 超时 · 来源溯源]
+    AGENT[ReAct Agent<br/>手写推理循环 · Token 熔断 · 工具白名单]
+    RAG[检索模块<br/>Embedding + Top-K · 阈值 0.6 降级]
+    THREAD[线程池 asyncio.to_thread<br/>隔离同步阻塞（密码哈希等）]
+    DBPOOL[数据库连接池<br/>SQLAlchemy 2.0 async + asyncpg]
+    RPOOL[Redis 连接池 redis.asyncio]
+    PG[(PostgreSQL<br/>用户 · 登录审计 · 业务数据)]
+    RD[(Redis<br/>Token 黑名单)]
+    CH[(ChromaDB<br/>文档向量与元数据)]
+    LLM[DeepSeek API]
+    U --> ST
+    ST --> API
+    API --> AUTH
+    API --> CHAT
+    API --> AGENT
+    API --> RAG
+    CHAT --> THREAD
+    AUTH --> THREAD
+    RAG --> DBPOOL
+    AUTH --> DBPOOL
+    AUTH --> RPOOL
+    DBPOOL --> PG
+    RPOOL --> RD
+    CHAT --> LLM
+    AGENT --> LLM
+    RAG --> CH
+    RAG --> LLM
+```
+
 ## 快速开始
 
 ```bash
