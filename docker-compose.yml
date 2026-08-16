@@ -1,0 +1,33 @@
+services:
+  # 1. 定义 Redis 服务
+  redis:
+    image: redis:alpine          # 轻量级 Redis 镜像
+    container_name: my_redis     # 容器名字
+    restart: always              # 开机自启
+    ports:
+      - "6379:6379"              # 映射端口，方便你本地电脑用 redis-cli 连
+    command: redis-server --requirepass ${REDIS_PASSWORD}  # 从 .env 读密码
+    networks:
+      - app-network
+
+  # 2. 定义你的 FastAPI 服务
+  app:
+    image: myai                  # 就是你之前 build 的镜像名字
+    container_name: my_fastapi
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis         # 🔥 关键！直接用容器名字，不再用 localhost
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}  # 从 .env 读取密码
+      # 如果你还有数据库等环境变量，也可以加在这里
+    depends_on:
+      - redis                    # 等 redis 启动后再启动 app
+    networks:
+      - app-network
+
+# 3. 创建内部网络（让两个容器能互相找到）
+networks:
+  app-network:
+    driver: bridge

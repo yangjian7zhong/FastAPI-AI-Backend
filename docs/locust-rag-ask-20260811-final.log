@@ -1,0 +1,7 @@
+[2026-08-11 10:16:49,108] PC-20240316SYTN/INFO/locust.main: Starting Locust 2.46.1
+[2026-08-11 10:16:49,111] PC-20240316SYTN/INFO/locust.main: Run time limit set to 180 seconds
+[2026-08-11 10:16:49,112] PC-20240316SYTN/INFO/locust.runners: Ramping to 50 users at a rate of 10.00 per second
+[2026-08-11 10:16:53,159] PC-20240316SYTN/INFO/locust.runners: All users spawned: {"RagAskLoadUser": 50} (50 total users)
+[2026-08-11 10:19:48,453] PC-20240316SYTN/INFO/locust.main: --run-time limit reached, shutting down
+[2026-08-11 10:19:53,680] PC-20240316SYTN/INFO/locust.runners: Not all users finished their tasks & terminated in 5.0 seconds. Stopping them...
+[2026-08-11 10:19:53,687] PC-20240316SYTN/INFO/locust.main: Shutting down (exit code 1)
