@@ -15,6 +15,43 @@
 
 FastAPI · SQLAlchemy 2.0（async）· PostgreSQL / SQLite · ChromaDB · Redis（Upstash）· DeepSeek · Docker / Railway
 
+## 架构
+
+```mermaid
+flowchart TB
+    U[用户 / 浏览器]
+    ST[展示层：Streamlit<br/>streamlit_app.py（本地演示）]
+    API[接口层：FastAPI<br/>认证 · 参数校验 · 路由 · SSE 流式]
+    AUTH[认证服务<br/>JWT 双 Token · 令牌校验]
+    CHAT[聊天服务<br/>SSE 流式 · 25s 超时 · 来源溯源]
+    AGENT[ReAct Agent<br/>手写推理循环 · Token 熔断 · 工具白名单]
+    RAG[检索模块<br/>Embedding + Top-K · 阈值 0.6 降级]
+    THREAD[线程池 asyncio.to_thread<br/>隔离同步阻塞（密码哈希等）]
+    DBPOOL[数据库连接池<br/>SQLAlchemy 2.0 async + asyncpg]
+    RPOOL[Redis 连接池 redis.asyncio]
+    PG[(PostgreSQL<br/>用户 · 登录审计 · 业务数据)]
+    RD[(Redis<br/>Token 黑名单)]
+    CH[(ChromaDB<br/>文档向量与元数据)]
+    LLM[DeepSeek API]
+    U --> ST
+    ST --> API
+    API --> AUTH
+    API --> CHAT
+    API --> AGENT
+    API --> RAG
+    CHAT --> THREAD
+    AUTH --> THREAD
+    RAG --> DBPOOL
+    AUTH --> DBPOOL
+    AUTH --> RPOOL
+    DBPOOL --> PG
+    RPOOL --> RD
+    CHAT --> LLM
+    AGENT --> LLM
+    RAG --> CH
+    RAG --> LLM
+```
+
 ## 快速开始
 
 ```bash
@@ -81,7 +118,19 @@ uvicorn main:app --reload
 
 ![压测结果](docs/perf_test_rag.png)
 
-分段日志（`rag_ask_timing`）显示 external（DeepSeek 调用）的 P95 为 15.6s，占接口 P95 的 67.9%，瓶颈在外部 LLM，不在检索。登录接口的密码校验原本是同步阻塞，改用 `asyncio.to_thread` 隔离到线程池后不再阻塞事件循环。
+分段日志（`rag_ask_timing`）显示 external（DeepSeek 调用）的 P95 为 15.6s，占接口 P95 的 67.9%，瓶颈在外部 LLM，不在检索。
+
+### 登录接口压测（2026-08-17 实测）
+
+压测方法：50 并发，持续 30 秒，直压登录接口（demo 账号）。优化前后对比：
+
+| 阶段 | 单请求 P50 | 50 并发 P95 | 失败率 |
+| --- | --- | --- | --- |
+| SQLite + 哈希 rounds=535000 | 527 ms | 10.3 s（伴随 `database is locked`） | 66% |
+| PostgreSQL + 旧哈希 | 612 ms | 13.4 s | 0% |
+| **PostgreSQL + rounds=60000 + 线程池16/连接池10** | **408 ms** | **2.0 s** | **0%** |
+
+主要优化：① 数据库从 SQLite 迁移到 PostgreSQL（SQLite 并发写锁会连读请求一起阻塞）；② 密码哈希成本 rounds 535000 → 60000（单次验证 457ms → 51ms）；③ `asyncio.to_thread` 线程池 8 → 16、连接池 5+5 → 10+10。登录审计写入做了降级容错，写失败不影响登录主流程。
 
 ## RAG 效果评估
 
