@@ -5,6 +5,7 @@ from datetime import timedelta
 import os
 import asyncio
 import time
+import logging
 
 from app.core.database import get_db
 from app.core.security import decode_token, create_access_token, create_refresh_token, verify_password
@@ -15,6 +16,8 @@ from app.models.user import User
 from app.models.login_log import LoginLog
 from app.dao.user_dao import UserDAO
 from app.core.redis_client import redis_client
+
+logger = logging.getLogger(__name__)
 
 api_key_scheme = APIKeyHeader(name='Authorization', auto_error=False)
 
@@ -97,10 +100,18 @@ async def login(
     if not user.is_active:
         raise HTTPException(status_code=403, detail="请先激活账号")
 
-    # 登录审计：记录 IP 与时间（登录日志表，供 /users/me 展示最近登录）
-    ip = request.client.host if request.client else None
-    db.add(LoginLog(user_id=user.id, ip=ip))
-    await db.commit()
+    # 登录审计：记录 IP 与时间（登录日志表，供 /users/me 展示最近登录）。
+    # 写入失败不影响登录主流程（如 SQLite 并发写锁），仅告警降级
+    try:
+        ip = request.client.host if request.client else None
+        db.add(LoginLog(user_id=user.id, ip=ip))
+        await db.commit()
+    except Exception as e:
+        logger.warning("登录审计写入失败（已降级，不影响登录）: %s", e)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     # JWT 双 Token：access（短效，业务请求）+ refresh（长效，仅换新 access）
     access_token = create_access_token(data={"sub": str(user.id)})
@@ -200,9 +211,13 @@ async def get_me(
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
 ):
-    # selectinload 预加载登录历史（避免 N+1），返回最近一次登录时间
-    user = await UserDAO.get_with_login_history(db, current_user.id)
-    resp = UserResponse.model_validate(user)
-    if user and user.login_logs:
-        resp.last_login_at = max(log.created_at for log in user.login_logs)
+    # selectinload 预加载登录历史（避免 N+1），返回最近一次登录时间；
+    # 审计表不可用时降级为普通响应，不影响主流程
+    resp = UserResponse.model_validate(current_user)
+    try:
+        user = await UserDAO.get_with_login_history(db, current_user.id)
+        if user and user.login_logs:
+            resp.last_login_at = max(log.created_at for log in user.login_logs)
+    except Exception as e:
+        logger.warning("登录历史读取失败（已降级）: %s", e)
     return resp

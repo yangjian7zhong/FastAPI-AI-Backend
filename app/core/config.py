@@ -22,6 +22,8 @@ class Settings:
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES", str(60 * 24 * 7)))  # 7 天
     ACTIVATION_TOKEN_EXPIRE_MINUTES: int = 10
+    # 密码哈希成本（rounds 越高越慢越安全；60000 约 60ms，兼顾安全与登录性能）
+    PASSWORD_HASH_ROUNDS: int = int(os.getenv("PASSWORD_HASH_ROUNDS", "60000"))
 
     MAIL_HOST: str = os.getenv("MAIL_HOST", "smtp.163.com")
     MAIL_PORT: int = 465

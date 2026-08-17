@@ -158,6 +158,10 @@ async def startup():
             logger.info("演示账号已强制创建: demo / demo123")
         else:
             logger.info("演示账号已存在: demo / demo123")
+            # 演示账号密码固定，每次启动按当前哈希成本重写，
+            # 调整 PASSWORD_HASH_ROUNDS 后旧哈希（高 rounds）自动刷新，避免拖慢登录
+            user.hashed_password = hash_password("demo123")
+            await session.commit()
     await redis_client.connect()
 
     # Chroma 自检：旧 L2 集合自动重建为 cosine 并灌库（失败不阻塞启动，下次启动会重试）

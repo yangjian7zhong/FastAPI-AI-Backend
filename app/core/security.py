@@ -4,7 +4,12 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException, status
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["sha256_crypt"],
+    deprecated="auto",
+    # rounds 由配置控制：验证旧哈希时 passlib 自动按哈希内 rounds 校验，不影响存量用户
+    sha256_crypt__rounds=settings.PASSWORD_HASH_ROUNDS,
+)
 
 def hash_password(plain: str) -> str:
     if isinstance(plain, bytes):
