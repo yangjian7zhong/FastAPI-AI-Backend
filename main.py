@@ -95,8 +95,10 @@ loguru_logger.add(_json_sink)
 
 # ---------- FastAPI 实例 ----------
 app = FastAPI(
-    title="AI 应用后端",
+    title="FastAPI 后端接口演示",
     description="""
+包含 RAG/Agent 功能模块。
+
 ## 测试账号
 
 | 用户名 | 密码 | 说明 |
@@ -115,7 +117,7 @@ app = FastAPI(
     swagger_ui_init_oauth={
         "usePkceWithAuthorizationCodeGrant": False,
         "clientId": "swagger",
-        "appName": "AI 应用后端",
+        "appName": "FastAPI 后端接口演示",
     }
 )
 app.mount("/docs", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "docs")), name="docs-assets")
