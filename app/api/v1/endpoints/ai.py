@@ -81,11 +81,22 @@ async def chat(
                                 continue
                     yield "data: [DONE]\n\n"
 
-        except asyncio.TimeoutError:
-            yield f"data: {json.dumps({'error': '请求超时，请稍后重试'})}\n\n"
+        # httpx 的超时抛的是 httpx.TimeoutException（ReadTimeout/ConnectTimeout 等），
+        # 它挂在 TransportError 下，**不是** asyncio.TimeoutError 的子类。
+        # 原实现只写 asyncio.TimeoutError，于是 25s 空闲超时会掉进下面的 except Exception，
+        # 客户端收到"服务器内部错误: The read operation timed out"而不是"请求超时"。
+        except (asyncio.TimeoutError, httpx.TimeoutException) as e:
+            logger.warning("chat 流式请求超时: %s", e)
+            yield f"data: {json.dumps({'error': '请求超时，请稍后重试'}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
         except httpx.HTTPStatusError as e:
-            yield f"data: {json.dumps({'error': f'API错误: {e.response.status_code}'})}\n\n"
+            logger.warning("chat 上游返回 %s: %s", e.response.status_code, e.response.text[:200])
+            yield f"data: {json.dumps({'error': f'API错误: {e.response.status_code}'}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'error': f'服务器内部错误: {str(e)}'})}\n\n"
+            # 只把异常类型给客户端，原始信息（可能含连接串等内部细节）只写日志
+            logger.warning("chat 生成失败: %s: %s", type(e).__name__, e)
+            yield f"data: {json.dumps({'error': f'服务器内部错误: {type(e).__name__}'}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")

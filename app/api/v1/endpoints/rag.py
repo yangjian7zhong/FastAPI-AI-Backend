@@ -2,13 +2,11 @@ import asyncio
 import time
 import os
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.endpoints.auth import get_current_user
 from app.core.config import settings
-from app.core.database import get_db
 from app.models.user import User
 from app.schemas.rag import RagAskRequest, RagRetrieveRequest
-from app.services.rag_service import ask_with_rag
+from app.services.rag_service import ask_with_rag, get_cached_answer, put_cached_answer, clear_answer_cache
 from rag.vector_store import query_documents, rebuild_collection_if_needed
 
 # 新增本地依赖
@@ -86,7 +84,9 @@ async def rag_rebuild(authorization: str | None = Header(None, alias="Authorizat
         raise HTTPException(status_code=403, detail="无效的 rebuild token")
     try:
         result = await asyncio.to_thread(rebuild_collection_if_needed)
-        return {"msg": "ok", **result}
+        # 知识库变了，缓存里的答案跟着失效
+        cleared = clear_answer_cache()
+        return {"msg": "ok", **result, "cache_cleared": cleared}
     except Exception as e:
         return {"msg": "failed", "error": str(e)}
 
@@ -104,14 +104,34 @@ async def rag_retrieve(req: RagRetrieveRequest, _: User | None = Depends(rag_aut
 
 @router.post("/rag/ask")
 async def rag_ask(req: RagAskRequest, current_user: User | None = Depends(rag_auth)):
-    bypass_cache = req.bypass_cache
-    if not current_user or not getattr(current_user, "is_admin", False):
-        bypass_cache = False
     if not settings.DEEPSEEK_API_KEY:
         raise HTTPException(status_code=500, detail="DEEPSEEK_API_KEY not configured")
+
+    # 只有 admin 能用 bypass_cache 跳过缓存，其余用户一律走缓存。
+    # 原实现把这个变量算完就丢了 —— 没有缓存可跳，参数纯死代码。
+    # 注：rag_auth 用 benchmark token 放行时 current_user 为 None，按非 admin 处理。
+    is_admin = bool(current_user and getattr(current_user, "is_admin", False))
+    use_cache = not (req.bypass_cache and is_admin)
+
     t0 = time.perf_counter()
+
+    if use_cache:
+        cached = get_cached_answer(req.question, req.top_k)
+        if cached is not None:
+            cached["latency_ms"] = round((time.perf_counter() - t0) * 1000, 2)
+            cached["cached"] = True
+            return cached
+
     result = await ask_with_rag(req.question, n_results=req.top_k)
     result["latency_ms"] = round((time.perf_counter() - t0) * 1000, 2)
+    result["cached"] = False
+
+    if use_cache:
+        # 本次耗时属于这次请求，不进缓存；命中时另算
+        put_cached_answer(
+            req.question, req.top_k,
+            {k: v for k, v in result.items() if k != "latency_ms"},
+        )
     return result
 
 

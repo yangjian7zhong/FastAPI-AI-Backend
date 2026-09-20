@@ -69,13 +69,17 @@ uvicorn main:app --reload
 | 变量 | 说明 | 默认 |
 | --- | --- | --- |
 | `DATABASE_URL` | PostgreSQL 连接串，不配则本地 SQLite | `sqlite+aiosqlite:///test.db` |
-| `SECRET_KEY` | JWT 签名密钥 | 开发默认值（生产必须改） |
+| `SECRET_KEY` | JWT 签名密钥（**必填**） | 无有效默认值：仍是占位串则拒绝启动 |
 | `DEEPSEEK_API_KEY` | DeepSeek 对话 / Agent | - |
 | `SILICONFLOW_API_KEY` | RAG 嵌入（BAAI/bge-large-zh-v1.5） | - |
 | `REDIS_URL` | Upstash / 托管 Redis（`rediss://` 或 `redis://`） | - |
 | `REDIS_HOST` `REDIS_PORT` `REDIS_PASSWORD` `REDIS_DB` | Redis 独立配置（没有 REDIS_URL 时用） | `localhost:6379` |
 | `BASE_URL` | 激活链接前缀 | `https://baisonghao.website` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | access token 有效期 | `30`（分钟） |
 | `REFRESH_TOKEN_EXPIRE_MINUTES` | refresh token 有效期 | `10080`（7 天） |
+| `ACTIVATION_TOKEN_EXPIRE_MINUTES` | 激活链接有效期 | `10`（分钟） |
+| `TAVILY_API_KEY` | Agent 的 `web_search` 工具 | 空 = 工具返回降级提示 |
+| `DEBUG` | 允许在 `SECRET_KEY` 未替换时启动（**仅本地调试**） | `false` |
 | `RAG_REBUILD_TOKEN` | 手动触发向量库重建接口的鉴权 | 空 = 接口禁用 |
 
 ## 接口
@@ -87,8 +91,9 @@ uvicorn main:app --reload
 | POST | `/register` | 注册，返回激活链接 |
 | GET | `/activate?token=` | 激活账号 |
 | POST | `/login` | 登录，返回 access + refresh |
-| POST | `/refresh` | refresh 换新 access |
-| POST | `/logout` | 登出，access 进黑名单 |
+| POST | `/refresh` | refresh 换新 token 对（旧 refresh 立即作废，做轮换） |
+| POST | `/logout` | 登出，access / refresh 进黑名单 |
+| POST | `/logout-all` | 全端登出，递增 `token_version` 吊销该用户全部 token |
 | GET | `/users/me` | 当前用户（含最近登录时间） |
 | POST | `/chat` | SSE 流式对话，带来源溯源 |
 | POST | `/agent` | ReAct Agent |
@@ -141,7 +146,8 @@ uvicorn main:app --reload
 
 ## 部署
 
-- **Railway（当前）**：`nixpacks.toml` + `Procfile`，PostgreSQL + Upstash Redis + 环境变量
+- **Railway（当前）**：`nixpacks.toml` + `Procfile`，PostgreSQL + Upstash Redis + 环境变量。
+  部署前必须先在 Railway → Variables 配好 `SECRET_KEY`（随机串），否则进程会因启动守卫直接退出
 - **Docker**：仓库自带 `Dockerfile`（streamlit 演示版）和 `docker-compose.yml`（FastAPI + Redis 双容器）
 
 ## 知识库维护
