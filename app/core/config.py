@@ -46,6 +46,12 @@ class Settings:
     RAG_BENCHMARK_TOKEN: str = os.getenv("RAG_BENCHMARK_TOKEN", "")
     # 手动触发 /rag/rebuild（重建 cosine 集合并灌库）的管理 token；不配则接口禁用
     RAG_REBUILD_TOKEN: str = os.getenv("RAG_REBUILD_TOKEN", "")
+    # RAG 相似度阈值（归一化 0~1，低于视为低置信度）。
+    # 标定依据（bge-large-zh-v1.5 + 本知识库 15 个分块实测）：
+    # 相关文档相似度落在 0.44~0.75，不相关查询的 top1 < 0.47。
+    # 原硬编码 0.6 会把大量相关文档（如 JWT 文档对"JWT 双 Token 是什么"仅 0.491）
+    # 全部误杀，导致 RAG 永远走降级分支，故下调至 0.45 并支持 env 覆盖。
+    RAG_SIMILARITY_THRESHOLD: float = float(os.getenv("RAG_SIMILARITY_THRESHOLD", "0.45"))
 
     BASE_URL: str = os.getenv("BASE_URL", "https://baisonghao.website")
     ENV: str = os.getenv("ENV", "dev")

@@ -9,8 +9,10 @@ from fastapi import HTTPException
 from app.core.config import settings
 from rag.vector_store import query_documents
 
-# 相似度阈值：归一化相似度低于 0.6 视为无相关文档，降级纯模型回答
-SIMILARITY_THRESHOLD = 0.6
+# 相似度阈值：归一化相似度低于该值视为低置信度，降级为纯模型回答。
+# 取值来自 config（env: RAG_SIMILARITY_THRESHOLD，默认 0.45），
+# 标定依据见 config.py 注释：0.6 会误杀本语料上的相关文档。
+SIMILARITY_THRESHOLD = settings.RAG_SIMILARITY_THRESHOLD
 
 DEEPSEEK_TIMEOUT_SECONDS = 60.0
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/v1/chat/completions"
@@ -69,18 +71,28 @@ async def ask_with_rag(question: str, n_results: int = 3) -> dict:
         logging.warning("RAG 检索失败，降级纯模型回答: %s", e)
         scored_docs = []
 
-    # 阈值过滤：只保留相似度 >= 0.6 的文档作为上下文
+    # 阈值过滤：只保留相似度 >= 阈值的文档作为上下文
     qualified = [d for d in scored_docs if d["score"] >= SIMILARITY_THRESHOLD]
     if qualified:
         context = "\n---\n".join(d["document"] for d in qualified)
-    else:
-        context = "未找到相关资料。"
-
-    prompt = f"""你是一个知识库问答助手。请根据以下资料回答用户的问题。
-如果资料中没有相关信息，请直接说"未找到相关资料"。
+        prompt = f"""你是一个知识库问答助手。请根据以下资料回答用户的问题。
+如果资料中没有相关信息，请明确说明"资料中未提及"，不要编造。
 
 ### 资料 ###
 {context}
+
+### 问题 ###
+{question}
+
+### 回答 ###"""
+    else:
+        # 低置信度降级：不使用知识库资料，直接凭模型自身知识回答。
+        # 原实现在这里把 context 换成"未找到相关资料。"、并让模型看到这句话，
+        # 结果是模型永远回答"未找到相关资料"——降级等于拒答，RAG 形同虚设。
+        # 现在：照常调用模型，只是不注入检索上下文；来源仍随响应返回，可追溯。
+        context = None
+        prompt = f"""你是一个乐于助人的 AI 助手。请直接根据你自己的知识回答用户的问题。
+回答应简洁、准确；不确定时如实说明，不要编造具体事实。
 
 ### 问题 ###
 {question}

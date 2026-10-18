@@ -126,10 +126,12 @@ app.mount("/docs", StaticFiles(directory=os.path.join(os.path.dirname(__file__),
 # ========== 全局异常处理器 ==========
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"全局异常: {exc}")
+    # 原始异常只写日志（含堆栈），不回给客户端：detail 里带 str(exc) 会把
+    # 连接串、路径、上游报文等内部细节暴露给调用方。
+    logger.error("全局异常: %s: %s", type(exc).__name__, exc, exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"detail": f"服务器内部错误: {str(exc)}"}
+        content={"detail": "服务器内部错误，请稍后重试"}
     )
 # =====================================
 

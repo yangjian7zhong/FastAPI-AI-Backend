@@ -37,8 +37,15 @@ async def chat(
                         {"source": d["document"][:200], "score": d["score"]}
                         for d in scored
                     ]
-                    if scored:
-                        context = "\n".join(d["document"] for d in scored)
+                    # 与 /rag/ask 同一阈值门控：低于置信度下限的文档不作为上下文注入。
+                    # 原实现无条件注入 top3，"你好"也会被塞进相似度 0.33 的无关文档，
+                    # 模型只能就着无关资料作答。来源列表仍完整返回（含分数）供追溯。
+                    qualified = [
+                        d for d in scored
+                        if d["score"] >= settings.RAG_SIMILARITY_THRESHOLD
+                    ]
+                    if qualified:
+                        context = "\n".join(d["document"] for d in qualified)
                 except Exception as e:
                     logger.warning("chat 检索来源失败，忽略来源: %s", e)
                     sources = []
