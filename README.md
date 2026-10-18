@@ -6,10 +6,10 @@
 
 - 认证：注册 + 邮箱激活、登录、JWT 双 Token（access + refresh）、登出（Redis 黑名单）
 - AI 对话：SSE 流式输出，25s 超时兜底，回答附带检索来源
-- RAG：ChromaDB 向量检索（余弦空间），距离归一化 + 0.6 相似度阈值，低相关自动降级纯模型回答
+- RAG：ChromaDB 向量检索（余弦空间），距离归一化 + 相似度阈值降级纯模型回答（默认 0.45，env `RAG_SIMILARITY_THRESHOLD` 可调，按 bge-large-zh 在本库实测标定）
 - Agent：手写 ReAct 推理循环（没有用 LangChain），max_iter=5 + Token 累计熔断；工具：RAG 检索 / 网络搜索 / 计算器 / Python 执行器（模块白名单沙箱）
 - 可观测：JSON 结构化日志（stdout）、loguru 链路耗时、请求耗时中间件（X-Process-Time）
-- 迁移：Alembic（0001 users，0002 login_logs 登录审计）
+- 迁移：Alembic（0001 users，0002 login_logs 登录审计，0003 users.token_version）
 
 ## 技术栈
 
@@ -25,7 +25,7 @@ flowchart TB
     AUTH[认证服务<br/>JWT 双 Token · 令牌校验]
     CHAT[聊天服务<br/>SSE 流式 · 25s 超时 · 来源溯源]
     AGENT[ReAct Agent<br/>手写推理循环 · Token 熔断 · 工具白名单]
-    RAG[检索模块<br/>Embedding + Top-K · 阈值 0.6 降级]
+    RAG[检索模块<br/>Embedding + Top-K · 阈值降级（默认0.45）]
     THREAD[线程池 asyncio.to_thread<br/>隔离同步阻塞（密码哈希等）]
     DBPOOL[数据库连接池<br/>SQLAlchemy 2.0 async + asyncpg]
     RPOOL[Redis 连接池 redis.asyncio]
@@ -79,6 +79,9 @@ uvicorn main:app --reload
 | `REFRESH_TOKEN_EXPIRE_MINUTES` | refresh token 有效期 | `10080`（7 天） |
 | `ACTIVATION_TOKEN_EXPIRE_MINUTES` | 激活链接有效期 | `10`（分钟） |
 | `TAVILY_API_KEY` | Agent 的 `web_search` 工具 | 空 = 工具返回降级提示 |
+| `RAG_SIMILARITY_THRESHOLD` | RAG 置信度阈值（归一化 0~1），低于则降级纯模型回答 | `0.45` |
+| `RAG_BENCHMARK_TOKEN` | 压测用 Bearer，可免 JWT 调 `/rag/*`（生产勿设） | 空 = 不生效 |
+| `PASSWORD_HASH_ROUNDS` | 密码哈希成本（sha256_crypt rounds） | `60000` |
 | `DEBUG` | 允许在 `SECRET_KEY` 未替换时启动（**仅本地调试**） | `false` |
 | `RAG_REBUILD_TOKEN` | 手动触发向量库重建接口的鉴权 | 空 = 接口禁用 |
 
@@ -100,6 +103,7 @@ uvicorn main:app --reload
 | POST | `/rag/retrieve` | 检索，返回片段 + 相似度分数 |
 | POST | `/rag/ask` | 检索 + 模型回答（阈值降级） |
 | POST | `/rag/local_search` | 纯本地检索（压测用） |
+| POST | `/rag/rebuild` | 重建向量库并灌库（需 `RAG_REBUILD_TOKEN`，未配置则禁用） |
 
 ## 踩过的坑
 
@@ -141,7 +145,7 @@ uvicorn main:app --reload
 
 150 条测试问题（100 条文档内、50 条文档外），人工标注对比纯模型与 RAG 的回答准确率：
 
-- 纯模型 61% → RAG 79%，相对提升 29.5%
+- 纯模型 61% → RAG 79%，相对提升 29.5%（150 条人工标注，阈值 0.6 时期实测；阈值下调至 0.45 后待复测）
 - 测试集仍在扩充中
 
 ## 部署

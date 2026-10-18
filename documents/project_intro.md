@@ -8,11 +8,11 @@
 
 # 认证机制
 
-认证采用 JWT 双 Token 方案：登录返回短效 access_token 和长效 refresh_token，access 过期后用 refresh 换新 token 无需重新登录。登出时把 access_token 加入 Redis 黑名单，失效时间等于 token 剩余有效期。Redis 故障时自动降级，跳过黑名单检查但依然通过数据库验证用户身份，保证服务可用性。
+认证采用 JWT 双 Token 方案：登录返回短效 access_token 和长效 refresh_token，access 过期后用 refresh 换新 token 无需重新登录。登出时把 access_token 或 refresh_token 加入 Redis 黑名单，失效时间等于 token 剩余有效期。Redis 故障时自动降级，跳过黑名单检查但依然通过数据库验证用户身份，保证服务可用性。
 
 # RAG 检索
 
-RAG 使用 ChromaDB 向量库，嵌入模型是 BAAI/bge-large-zh-v1.5，检索空间为余弦相似度。检索结果做距离归一化得到 0 到 1 的相似度分数，分数低于 0.6 阈值时认为没有相关文档，自动降级为纯大模型回答，避免把不相关的内容喂给模型产生幻觉。
+RAG 使用 ChromaDB 向量库，嵌入模型是 BAAI/bge-large-zh-v1.5，检索空间为余弦相似度。检索结果做距离归一化得到 0 到 1 的相似度分数，默认以 0.45 为置信度阈值（环境变量 RAG_SIMILARITY_THRESHOLD 可调）：低于阈值认为低置信度，自动降级为纯大模型回答，避免把不相关的内容喂给模型产生幻觉；阈值来自 bge-large-zh 在本知识库上的实测标定，相关文档相似度约 0.44 到 0.75。
 
 # Agent 实现
 

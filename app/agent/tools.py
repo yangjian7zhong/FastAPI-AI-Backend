@@ -142,7 +142,7 @@ def rag_search(query: str) -> str:
     """真实 RAG 检索：复用 rag/vector_store.py 的 Chroma 余弦检索。
 
     与 /rag/ask 走同一套检索实现（余弦空间 + 归一化相似度）。
-    这里不套 0.6 阈值，把带分数的前 3 条原文交给模型自己判断。
+    这里不套置信度阈值（默认 0.45，env 可调），把带分数的前 3 条原文交给模型自己判断。
     """
     try:
         docs = query_documents(query, n_results=3)
