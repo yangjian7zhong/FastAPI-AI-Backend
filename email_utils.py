@@ -33,11 +33,14 @@ async def send_activation_email(email: str, username: str, token: str):
 
 def _send_sync(email: str, msg: MIMEMultipart):
     try:
-        with smtplib.SMTP_SSL(settings.MAIL_HOST, settings.MAIL_PORT) as server:
+        print(f"📧 开始发送激活邮件 -> {email} ({settings.MAIL_HOST}:{settings.MAIL_PORT})", flush=True)
+        # timeout 必须显式设置：部分云平台（如 Railway）静默丢弃出站 SMTP，
+        # 不设超时会让后台线程永久阻塞且无任何日志
+        with smtplib.SMTP_SSL(settings.MAIL_HOST, settings.MAIL_PORT, timeout=15) as server:
             server.login(settings.MAIL_USERNAME, settings.MAIL_PASSWORD)
             server.sendmail(settings.MAIL_FROM, [email], msg.as_string())
-        print(f"✅ 邮件发送成功 -> {email}")
+        print(f"✅ 邮件发送成功 -> {email}", flush=True)
     except Exception as e:
-        print(f"❌ 邮件发送失败: {e}")
+        print(f"❌ 邮件发送失败 -> {email}: {type(e).__name__}: {e}", flush=True)
 
 
