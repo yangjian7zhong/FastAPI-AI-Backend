@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from app.api.v1.endpoints.auth import get_current_user
 from app.models.user import User
@@ -17,6 +17,7 @@ router = APIRouter()
 @router.post("/chat")
 async def chat(
     request: ChatRequest,
+    http_request: Request,
     current_user: User = Depends(get_current_user)
 ):
     api_key = settings.DEEPSEEK_API_KEY
@@ -57,6 +58,10 @@ async def chat(
 
             # 先推送来源溯源事件，再推送内容
             if sources:
+                # 检索阶段（约 1s）客户端可能已关页面：断开就别再发起上游请求
+                if await http_request.is_disconnected():
+                    logger.info("chat 客户端在检索阶段已断开，放弃生成")
+                    return
                 yield f"data: {json.dumps({'sources': sources}, ensure_ascii=False)}\n\n"
 
             async with httpx.AsyncClient(timeout=TIMEOUT) as client:
@@ -75,6 +80,12 @@ async def chat(
                 ) as response:
                     response.raise_for_status()
                     async for line in response.aiter_lines():
+                        # 每个 chunk yield 前检测断开：客户端关页面即停，不再白烧上游 token。
+                        # 上游流的关闭由 async with 退出时的 response.aclose() 自动完成，
+                        # 无需（也不能）在 break 后手动关——手动 stream=True 才需要 finally: aclose。
+                        if await http_request.is_disconnected():
+                            logger.info("chat 客户端已断开，中止生成，上游流随 async with 退出自动关闭")
+                            return
                         if line.startswith("data: "):
                             data = line[6:]
                             if data == "[DONE]":
