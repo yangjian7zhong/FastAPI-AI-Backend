@@ -2,12 +2,16 @@
 
 每轮四步：LLM 调用 → Token 熔断检查 → 解析 → 工具执行（Observation 以 user 消息回流）。
 
-出口有四种，用返回值里的 exit_reason 区分（原实现只返回一个布尔，跑满轮数和正常结束
+出口有五种，用返回值里的 exit_reason 区分（原实现只返回一个布尔，跑满轮数和正常结束
 在返回值上完全区分不开，且端点又把这个布尔丢掉了）：
 - final_answer      模型给出了 Final Answer，正常结束
 - circuit_breaker   累计估算 token 超过 MAX_TOTAL_TOKENS，熔断
 - max_iterations    跑满 max_iterations 轮仍未给出答案，兜底取最后一条 assistant
 - llm_error         LLM 调用本身失败（新增出口；原实现会把异常直接冒泡成 500）
+- loop_detected     连续两轮给出完全相同的 (Action, Action Input)，判定原地打转。
+                    边界：只抓"连续"重复，A→B→A 这类交替重复抓不到，仍靠
+                    max_iterations 兜底；要抓交替模式需要维护动作频率窗口，属于
+                    已知缺口里更重的一档，见 README。
 """
 import asyncio
 import functools
@@ -101,6 +105,9 @@ async def run_agent(query: str, max_iterations: int = 5) -> dict:
     exit_reason = "max_iterations"
     iterations_used = 0
     error = None
+    # 循环检测状态：上一轮的 (工具名, 规范化入参) 及连续重复次数
+    last_action_key = None
+    repeat_count = 0
 
     for iteration in range(max_iterations):
         iterations_used = iteration + 1
@@ -143,6 +150,27 @@ async def run_agent(query: str, max_iterations: int = 5) -> dict:
             except Exception:
                 # 不是合法 JSON：按单参数工具兜底，语义靠下一段的字段名校验把关
                 input_data = {"query": raw_input}
+
+            # ---------- ③.5 循环检测 ----------
+            # 连续两轮完全相同的 (Action, Action Input) 即判定模型在原地打转，立即退出，
+            # 且退出前不再重复执行该工具（省一次无谓调用）。
+            # 边界：只抓连续重复；A→B→A 交替重复抓不到，由 max_iterations 兜底。
+            action_key = (
+                tool_name,
+                json.dumps(input_data, sort_keys=True, ensure_ascii=False),
+            )
+            if action_key == last_action_key:
+                repeat_count += 1
+            else:
+                repeat_count = 0
+                last_action_key = action_key
+            if repeat_count >= 1:
+                exit_reason = "loop_detected"
+                logger.warning(
+                    "agent 连续第 %d 次调用同一工具同参数（%s），判定 loop_detected 退出",
+                    repeat_count + 1, tool_name,
+                )
+                break
 
             tool_func = TOOLS.get(tool_name)
             if tool_func is None:
