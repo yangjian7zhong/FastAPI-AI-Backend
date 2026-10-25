@@ -25,7 +25,7 @@ async def agent_endpoint(req: AgentRequest, current_user: User = Depends(get_cur
         "query": req.query,
         "answer": result["output"],
         "steps": result["intermediate_steps"],
-        "exit_reason": result["exit_reason"],            # final_answer / circuit_breaker / max_iterations / llm_error
+        "exit_reason": result["exit_reason"],            # final_answer / circuit_breaker / max_iterations / llm_error / loop_detected
         "iterations_used": result["iterations_used"],
         "max_iterations": result["max_iterations"],
         "circuit_breaker_tripped": result["circuit_breaker_tripped"],
