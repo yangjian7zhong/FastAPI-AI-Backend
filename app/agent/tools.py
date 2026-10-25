@@ -152,10 +152,21 @@ def rag_search(query: str) -> str:
     if not docs:
         return f"未检索到与「{query}」相关的文档（向量库不可用或知识库为空）。"
 
-    return "\n\n".join(
+    result = "\n\n".join(
         f"[{i + 1}] 相似度 {d.get('score', 0):.2f}\n{d.get('document', '')}"
         for i, d in enumerate(docs)
     )
+    # 低置信度提示：top1 都够不到阈值时，明确告诉模型"这堆资料可能不相关"，
+    # 防止模型硬着头皮引用。只加 Observation 文案——检索逻辑不套阈值的设计不变
+    # （与 /rag/ask 的门控是两种有意不同的策略，见 docstring）。
+    top1 = docs[0].get("score", 0)
+    if top1 < settings.RAG_SIMILARITY_THRESHOLD:
+        result += (
+            f"\n\n⚠ 检索结果置信度较低（最高相似度 {top1:.2f} < 阈值 "
+            f"{settings.RAG_SIMILARITY_THRESHOLD}），以上内容可能与问题无关，"
+            "请谨慎使用或明确说明不确定，不要强行引用。"
+        )
+    return result
 
 
 def web_search(query: str) -> str:
