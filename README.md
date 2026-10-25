@@ -116,7 +116,7 @@ uvicorn main:app --reload
 
 ### 已补最小版（边界即讲解素材）
 
-- **SSE 断开检测**：检索结束与每个 chunk yield 前各调一次 `request.is_disconnected()`，客户端关页面即停，不再白烧上游 token；上游流由 `async with` 退出时自动 `aclose()`。未做：背压控制、断点续传
+- **SSE 断开检测**：轮询（每个 chunk yield 前）+ finally 兜底双路径。本地 uvicorn 实测发现：客户端断开时 Starlette 的 `StreamingResponse.listen_for_disconnect` 会取消流响应任务，生成器在 await 点退出，轮询点（循环开头）来不及执行；故在 finally 补一次检测——断开后 finally 里 `is_disconnected()` 返回 True（uvicorn 断开时 `send` 静默 return 不抛错，轮询是唯一主动手段）。上游流由 `async with` 退出时自动 `aclose()`。未做：背压控制、断点续传
 - **ReAct 循环检测**：连续两轮给出完全相同的 (Action, Action Input) 即 `exit_reason=loop_detected` 退出，且退出前不重复执行工具。边界：只抓连续重复（A→A），A→B→A 这类交替重复抓不到，仍由 max_iterations 兜底；要抓交替模式需要维护动作频率窗口，是更重的一档
 
 ### 未补缺口（按影响面 × 触发概率分级）
