@@ -116,5 +116,17 @@ async def chat(
             logger.warning("chat 生成失败: %s: %s", type(e).__name__, e)
             yield f"data: {json.dumps({'error': f'服务器内部错误: {type(e).__name__}'}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
+        finally:
+            # 取消路径兜底检测：客户端断开时 Starlette 的 StreamingResponse 内部
+            # listen_for_disconnect 会取消流响应任务，生成器在 await 点退出——
+            # 上面的轮询点（循环开头）来不及执行，断开日志会丢。本地 uvicorn 实测：
+            # 断开后 finally 里 is_disconnected() 返回 True，这里补一次检测，
+            # 保证"断开即停"有日志可查。finally 里不能 return / raise，
+            # 否则会吞掉正在传播的 CancelledError。
+            try:
+                if await http_request.is_disconnected():
+                    logger.info("chat 客户端已断开（取消路径），上游流已随 async with 退出自动关闭")
+            except BaseException:
+                pass  # 检测失败不影响原始异常的传播
 
     return StreamingResponse(generate(), media_type="text/event-stream")
