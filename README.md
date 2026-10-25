@@ -5,9 +5,9 @@
 ## 功能
 
 - 认证：注册 + 邮箱激活、登录、JWT 双 Token（access + refresh）、登出（Redis 黑名单）
-- AI 对话：SSE 流式输出，25s 超时兜底，回答附带检索来源
+- AI 对话：SSE 流式输出，25s 超时兜底，客户端断开检测（断开即停，不白烧上游 token），回答附带检索来源
 - RAG：ChromaDB 向量检索（余弦空间），距离归一化 + 相似度阈值降级纯模型回答（默认 0.45，env `RAG_SIMILARITY_THRESHOLD` 可调，按 bge-large-zh 在本库实测标定）
-- Agent：手写 ReAct 推理循环（没有用 LangChain），max_iter=5 + Token 累计熔断；工具：RAG 检索 / 网络搜索 / 计算器 / Python 执行器（模块白名单沙箱）
+- Agent：手写 ReAct 推理循环（没有用 LangChain），max_iter=5 + Token 累计熔断 + 连续重复动作短路（loop_detected）；工具：RAG 检索（top1 低于阈值时返回低置信度警告）/ 网络搜索 / 计算器 / Python 执行器（模块白名单沙箱）
 - 可观测：JSON 结构化日志（stdout）、loguru 链路耗时、请求耗时中间件（X-Process-Time）
 - 迁移：Alembic（0001 users，0002 login_logs 登录审计，0003 users.token_version）
 
@@ -24,7 +24,7 @@ flowchart TB
     API[接口层：FastAPI<br/>认证 · 参数校验 · 路由 · SSE 流式]
     AUTH[认证服务<br/>JWT 双 Token · 令牌校验]
     CHAT[聊天服务<br/>SSE 流式 · 25s 超时 · 来源溯源]
-    AGENT[ReAct Agent<br/>手写推理循环 · Token 熔断 · 工具白名单]
+    AGENT[ReAct Agent<br/>手写推理循环 · Token 熔断 · 循环检测]
     RAG[检索模块<br/>Embedding + Top-K · 阈值降级（默认0.45）]
     THREAD[线程池 asyncio.to_thread<br/>隔离同步阻塞（密码哈希等）]
     DBPOOL[数据库连接池<br/>SQLAlchemy 2.0 async + asyncpg]
@@ -111,6 +111,24 @@ uvicorn main:app --reload
 - **chromadb metadata 会撒谎**：`get_or_create_collection` 会悄悄改写已存在集合的 metadata，看起来是 cosine 实际还是 L2。用自有标记 `dsh_schema` 记录真实检索空间，旧库启动时自动删除重建
 - **向量库增量维护**：文档新增/改写后，启动时按内容 id 增量补灌并清理过期片段，不需要手动重建
 - **SQLite 事务**：连接串走 `aiosqlite`，异步 ORM 与同步建表并存，启动时幂等建表
+
+## 已知缺口（分级 + 最小补法）
+
+### 已补最小版（边界即讲解素材）
+
+- **SSE 断开检测**：检索结束与每个 chunk yield 前各调一次 `request.is_disconnected()`，客户端关页面即停，不再白烧上游 token；上游流由 `async with` 退出时自动 `aclose()`。未做：背压控制、断点续传
+- **ReAct 循环检测**：连续两轮给出完全相同的 (Action, Action Input) 即 `exit_reason=loop_detected` 退出，且退出前不重复执行工具。边界：只抓连续重复（A→A），A→B→A 这类交替重复抓不到，仍由 max_iterations 兜底；要抓交替模式需要维护动作频率窗口，是更重的一档
+
+### 未补缺口（按影响面 × 触发概率分级）
+
+| 优先级 | 缺口 | 影响 | 最小补法 |
+| --- | --- | --- | --- |
+| P1 | SSE 无心跳 | 中间层（Nginx / 网关）空闲超时会掐断长连接；本项目上游 25s 超时兜底 + Railway 无此类配置，实际触发概率低 | 生成器里用 `asyncio.wait_for` 包上游迭代，超时未收到数据就 `yield ": keep-alive\n\n"` |
+| P1 | SSE 无背压 | 客户端消费慢时服务端仍全速吐数据，chunk 在内存驻留 | 有界队列 + `await queue.join()`，或按写缓冲区水位暂停读上游 |
+| P2 | 日志无 trace_id | 一次请求跨认证 / 检索 / LLM 三段，出问题难按请求串起来 | 中间件生成 uuid 存 contextvars，loguru JSON sink 统一带出 |
+| P2 | Python 执行器无内存限制 | 已有 AST 白名单 + 1s 超时 + 子进程隔离三重防护，只缺内存维度 | 子进程内 `resource.setrlimit(RLIMIT_AS, ...)` 限制地址空间 |
+| P3 | register 的哈希没进 to_thread | 注册瞬间阻塞事件循环约 51ms（rounds=60000 实测），量小但存在 | 注册路由同样 `await asyncio.to_thread(hash_password, ...)` |
+| P3 | 事务提交点分散 | commit 散在路由与 Service 层，异常路径依赖全局 handler 兜底 | Service 层统一 async context manager 管 commit / rollback |
 
 ## 性能测试
 
