@@ -19,11 +19,13 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from contextlib import asynccontextmanager
 from loguru import logger as loguru_logger
 
 from app.api.v1.endpoints import auth, ai
+from app.api.v1.endpoints import demo as demo_api
+from app.web_demo import DEMO_HTML
 from app.core.database import AsyncSessionLocal, init_db
 from app.models.user import User
 from app.core.security import hash_password
@@ -99,13 +101,12 @@ app = FastAPI(
     description="""
 包含 RAG/Agent 功能模块。
 
-## 测试账号
+## 在线体验
 
-| 用户名 | 密码 | 说明 |
-|--------|------|------|
-| `demo` | `demo123` | 演示账号（已激活） |
+打开 **`/demo`** 即可直接问答，**无需账号密码**：页面自动换取一枚 2 小时有效的体验 token。
 
-### 使用步骤
+## 接口调用步骤
+
 1. 调用 `POST /api/v1/login` 获取 `access_token`
 2. 点击右上角 **Authorize** 按钮，输入 `Bearer <你的token>`
 3. 调用任意带锁接口
@@ -200,10 +201,17 @@ app.include_router(ai.router, prefix="/api/v1", tags=["AI"])
 from app.api.v1.endpoints import agent, rag
 app.include_router(agent.router, prefix="/api/v1", tags=["Agent"])
 app.include_router(rag.router, prefix="/api/v1", tags=["RAG"])
+app.include_router(demo_api.router, prefix="/api/v1", tags=["演示体验"])
 
 @app.get("/")
 async def root():
-    return {"msg": "FastAPI 项目已启动", "docs": "/docs"}
+    return {"msg": "FastAPI 项目已启动", "demo": "/demo", "docs": "/docs"}
+
+
+@app.get("/demo", response_class=HTMLResponse, include_in_schema=False)
+async def demo_page():
+    """演示页：打开即用，页面里不出现账号密码（token 由 /api/v1/demo/token 服务端签发）。"""
+    return HTMLResponse(content=DEMO_HTML)
 
 
 

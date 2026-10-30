@@ -1,6 +1,9 @@
 # FastAPI AI 应用后端
 
-一个带完整认证、RAG 检索和 ReAct Agent 的 FastAPI 后端，已部署在 <https://baisonghao.website>，接口文档见 `/docs`（演示账号 `demo / demo123`）。
+一个带完整认证、RAG 检索和 ReAct Agent 的 FastAPI 后端，已部署在 <https://baisonghao.website>。
+
+- **在线体验**：打开 <https://baisonghao.website/demo> 直接问答，**无需账号密码**（页面自动换取 2 小时有效的体验 token）
+- **接口文档**：<https://baisonghao.website/docs>
 
 ## 功能
 
